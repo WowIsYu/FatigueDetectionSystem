@@ -1,0 +1,70 @@
+#外部APP
+ExtraApp/
+otherApp/
+
+# 编译中间文件
+*.idea
+*.o
+*.obj
+*.lo
+*.la
+*.a
+*.lib
+*.so
+*.so.*
+*.dll
+*.dylib
+
+# 生成的 moc、ui、qrc 文件
+moc_*.cpp
+moc_*.h
+ui_*.h
+qrc_*.cpp
+
+# Qt Creator 生成的项目文件
+*.autosave
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+
+# 编译输出目录（你可以根据自己项目修改）
+main-make/
+build-*/
+build/
+bin/
+debug/
+release/
+
+# Qt Creator 配置缓存
+*.qmlproject.user
+*.qmlproject.user.*
+*.creator.*
+*.creator
+*.creator.user*
+*.user
+
+# 临时文件
+*~
+*.swp
+*.bak
+*.tmp
+*.log
+
+# MacOS 系统文件
+.DS_Store
+
+# Windows 系统文件
+Thumbs.db
+desktop.ini
+
+# CMake 文件（如果你有混用）
+CMakeFiles/
+CMakeCache.txt
+CMakeLists.txt.user
+cmake_install.cmake
+Makefile
+
+# 忽略构建目录
+cmake-build-debug/
+
