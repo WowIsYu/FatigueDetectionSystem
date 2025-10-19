@@ -29,6 +29,7 @@ public:
 signals:
     void frameReady(const cv::Mat& frame);
     void error(const QString& message);
+    void opened(bool success);  // 新增：初始化完成信号
 
 public slots:
     void process();
@@ -96,6 +97,7 @@ signals:
     void frameReady(const cv::Mat& frame);
     void error(const QString& message);
     void finished();
+    void sourceOpened(bool success);  // 新增：异步初始化完成信号
 
 private:
     std::unique_ptr<QThread> m_thread;

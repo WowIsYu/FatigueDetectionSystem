@@ -370,6 +370,10 @@ void MainWindow::setupConnections()
     // 视频处理器信号
     connect(m_videoProcessor.get(), &VideoProcessor::frameReady,
             this, &MainWindow::onFrameReady);
+    connect(m_videoProcessor.get(), &VideoProcessor::sourceOpened,
+            this, &MainWindow::onSourceOpened);
+    connect(m_videoProcessor.get(), &VideoProcessor::error,
+            this, &MainWindow::onVideoError);
 }
 
 void MainWindow::loadConfig()
@@ -492,13 +496,10 @@ void MainWindow::startCamera()
         stopCamera();
     }
 
-    if (!m_videoProcessor->openCamera(0)) {
-        QMessageBox::warning(this, "错误", "无法打开摄像头");
-        return;
-    }
-
+    // 异步打开摄像头，不再阻塞 UI
+    m_videoProcessor->openCamera(0);
     m_videoProcessor->start();
-    updateDetectionResult("摄像头已开启");
+    updateDetectionResult("正在打开摄像头...");
 }
 
 void MainWindow::stopCamera()
@@ -529,13 +530,10 @@ void MainWindow::startIPCamera()
 
     m_ipCameraAddress = address;
 
-    if (!m_videoProcessor->openIPCamera(address.toStdString())) {
-        QMessageBox::warning(this, "错误", "无法连接到IP摄像头，请检查地址是否正确");
-        return;
-    }
-
+    // 异步打开 IP 摄像头，不再阻塞 UI
+    m_videoProcessor->openIPCamera(address.toStdString());
     m_videoProcessor->start();
-    updateDetectionResult("已连接到IP摄像头");
+    updateDetectionResult("正在连接IP摄像头...");
     m_ipcameraStartBtn->setEnabled(false);
     m_ipcameraStopBtn->setEnabled(true);
 }
@@ -649,6 +647,24 @@ void MainWindow::closeEvent(QCloseEvent* event)
     stopVideoDetection();
     saveConfig();
     event->accept();
+}
+
+void MainWindow::onSourceOpened(bool success)
+{
+    if (success) {
+        updateDetectionResult("视频源已成功打开");
+    } else {
+        updateDetectionResult("无法打开视频源");
+        QMessageBox::warning(this, "错误", "无法打开视频源，请检查设备或地址");
+        // 恢复按钮状态
+        m_ipcameraStartBtn->setEnabled(true);
+        m_ipcameraStopBtn->setEnabled(false);
+    }
+}
+
+void MainWindow::onVideoError(const QString& message)
+{
+    updateDetectionResult("错误: " + message);
 }
 
 void MainWindow::updatePerformanceIndicator()

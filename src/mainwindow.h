@@ -59,6 +59,10 @@ private slots:
     // 帧处理
     void onFrameReady(const cv::Mat& frame);
 
+    // 异步初始化回调
+    void onSourceOpened(bool success);
+    void onVideoError(const QString& message);
+
     // 性能监测
     void updatePerformanceIndicator();
 

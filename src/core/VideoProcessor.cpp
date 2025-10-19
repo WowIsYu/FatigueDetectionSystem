@@ -69,14 +69,18 @@ void VideoProcessorWorker::start()
         return;
     }
 
-    // 打开视频源
+    // 打开视频源（在 Worker 线程中执行，不会阻塞 UI）
+    bool success = false;
     if (m_isDevice) {
-        m_capture.open(m_deviceId);
+        success = m_capture.open(m_deviceId);
     } else {
-        m_capture.open(m_source);
+        success = m_capture.open(m_source);
     }
 
-    if (!m_capture.isOpened()) {
+    // 发送初始化结果信号
+    emit opened(success);
+
+    if (!success) {
         emit error("无法打开视频源");
         return;
     }
@@ -177,6 +181,8 @@ VideoProcessor::VideoProcessor(QObject* parent)
     qDebug() << "VideoProcessor thread:" << this->thread();
     connect(m_worker.get(), &VideoProcessorWorker::error,
             this, &VideoProcessor::error);
+    connect(m_worker.get(), &VideoProcessorWorker::opened,
+            this, &VideoProcessor::sourceOpened);
 
     // connect(m_thread.get(), &QThread::started, [this]() {
     //     HANDLE h = reinterpret_cast<HANDLE>(m_thread->currentThreadId());
@@ -261,19 +267,9 @@ bool VideoProcessor::openVideo(const std::string& filename)
 
     m_worker->setSource(filename);
 
-    // 获取视频信息
-    cv::VideoCapture cap(filename);
-    if (cap.isOpened()) {
-        m_frameCount = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
-        m_fps = cap.get(cv::CAP_PROP_FPS);
-        int width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-        int height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-        m_frameSize = cv::Size(width, height);
-        cap.release();
-        return true;
-    }
-
-    return false;
+    // 不再在主线程测试打开，改为直接返回 true
+    // 实际的打开操作将在 Worker 线程的 start() 中异步执行
+    return true;
 }
 
 bool VideoProcessor::openCamera(int deviceId)
@@ -284,18 +280,9 @@ bool VideoProcessor::openCamera(int deviceId)
 
     m_worker->setDevice(deviceId);
 
-    // 测试摄像头
-    cv::VideoCapture cap(deviceId);
-    if (cap.isOpened()) {
-        m_fps = 30.0; // 默认FPS
-        int width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-        int height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-        m_frameSize = cv::Size(width, height);
-        cap.release();
-        return true;
-    }
-
-    return false;
+    // 不再在主线程测试打开，改为直接返回 true
+    // 实际的打开操作将在 Worker 线程的 start() 中异步执行
+    return true;
 }
 
 bool VideoProcessor::openIPCamera(const std::string& url)
@@ -306,21 +293,9 @@ bool VideoProcessor::openIPCamera(const std::string& url)
 
     m_worker->setSource(url);
 
-    // 测试连接
-    cv::VideoCapture cap(url);
-    if (cap.isOpened()) {
-        m_fps = cap.get(cv::CAP_PROP_FPS);
-        if (m_fps <= 0) {
-            m_fps = 25.0; // 默认FPS
-        }
-        int width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-        int height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-        m_frameSize = cv::Size(width, height);
-        cap.release();
-        return true;
-    }
-
-    return false;
+    // 不再在主线程测试打开，改为直接返回 true
+    // 实际的打开操作将在 Worker 线程的 start() 中异步执行
+    return true;
 }
 
 void VideoProcessor::close()
