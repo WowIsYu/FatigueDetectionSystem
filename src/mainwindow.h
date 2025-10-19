@@ -57,7 +57,6 @@ private slots:
     void showRecords();
 
     // 帧处理
-    void processFrame();
     void onFrameReady(const cv::Mat& frame);
 
     // 性能监测
@@ -110,22 +109,11 @@ private:
     std::unique_ptr<VideoProcessor> m_videoProcessor;
     std::unique_ptr<Config> m_config;
 
-    // OpenCV相关
-    cv::VideoCapture m_capture;
-    QTimer* m_frameTimer;
-
     // 状态变量
     QString m_currentModelPath;
     QString m_currentImagePath;
     QString m_currentVideoPath;
     QString m_ipCameraAddress;
-
-    // 检测控制变量
-    std::map<QString, double> m_lastDetection;
-    std::map<QString, int> m_consecutiveCount;
-    std::map<QString, qint64> m_lastSaveTime;
-    double m_confidenceThreshold = 0.6;
-    int m_saveInterval = 1000; // milliseconds
 
     // 性能监测
     QLabel* m_performanceLabel;

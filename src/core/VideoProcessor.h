@@ -7,6 +7,10 @@
 #include <atomic>
 #include <memory>
 
+// Forward declaration
+class DetectionEngine;
+class DatabaseManager;
+
 class VideoProcessorWorker : public QObject
 {
     Q_OBJECT
@@ -17,6 +21,10 @@ public:
 
     void setSource(const std::string& source);
     void setDevice(int deviceId);
+    void setDetectionEngine(DetectionEngine* engine);
+    void setDatabaseManager(DatabaseManager* dbManager);
+    void setDisplaySize(int width, int height);
+    void setEnableDetection(bool enable);
 
 signals:
     void frameReady(const cv::Mat& frame);
@@ -33,6 +41,22 @@ private:
     std::string m_source;
     int m_deviceId;
     bool m_isDevice;
+
+    // 检测相关
+    DetectionEngine* m_detectionEngine;
+    DatabaseManager* m_dbManager;
+    int m_displayWidth;
+    int m_displayHeight;
+    bool m_enableDetection;
+
+    // 检测节流
+    std::map<std::string, double> m_lastDetection;
+    std::map<std::string, int> m_consecutiveCount;
+    std::map<std::string, qint64> m_lastSaveTime;
+    double m_confidenceThreshold;
+    int m_saveInterval;
+
+    bool shouldSaveDetection(const std::string& name, double confidence);
 };
 
 class VideoProcessor : public QObject
@@ -49,6 +73,12 @@ public:
     bool openCamera(int deviceId = 0);
     bool openIPCamera(const std::string& url);
     void close();
+
+    // 检测配置
+    void setDetectionEngine(DetectionEngine* engine);
+    void setDatabaseManager(DatabaseManager* dbManager);
+    void setDisplaySize(int width, int height);
+    void setEnableDetection(bool enable);
 
 
 public slots:

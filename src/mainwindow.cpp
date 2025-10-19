@@ -34,9 +34,6 @@
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_frameTimer(new QTimer(this))
-    , m_confidenceThreshold(0.6)
-    , m_saveInterval(1000)
     , m_animationTimer(new QTimer(this))
     , m_rotationAngle(0)
     , m_lastFrameTime(0)
@@ -63,13 +60,15 @@ MainWindow::MainWindow(QWidget *parent)
                  << m_detectionEngine->loadModel(m_currentModelPath.toStdString());
     }
 
+    // 配置VideoProcessor
+    m_videoProcessor->setDetectionEngine(m_detectionEngine.get());
+    m_videoProcessor->setDatabaseManager(m_dbManager.get());
+    m_videoProcessor->setDisplaySize(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    m_videoProcessor->setEnableDetection(true);
+
     // 设置UI
     setupUI();
     setupConnections();
-
-    // 设置帧定时器
-    m_frameTimer->setInterval(33); // 约30fps
-    connect(m_frameTimer, &QTimer::timeout, this, &MainWindow::processFrame);
 
     // 设置性能监测定时器 (每50ms更新一次动画，20fps)
     m_animationTimer->setInterval(50);
@@ -431,8 +430,6 @@ void MainWindow::startImageDetection()
     // 绘制检测结果
     for (const auto& det : results) {
         cv::rectangle(image, det.bbox, cv::Scalar(0, 255, 0), 2);
-        qDebug() << "x, y:" << det.bbox.x << "," << det.bbox.y;
-        qDebug() << "width, height:" << det.bbox.width << "," << det.bbox.height;
         std::string label = det.className + " " +
                             std::to_string(int(det.confidence * 100)) + "%";
         cv::putText(image, label,
@@ -440,10 +437,8 @@ void MainWindow::startImageDetection()
                     cv::FONT_HERSHEY_SIMPLEX, 0.5,
                     cv::Scalar(0, 255, 0), 2);
 
-        // 保存检测结果
-        if (shouldSaveDetection(QString::fromStdString(det.className), det.confidence)) {
-            m_dbManager->saveDetection(det.className, det.confidence);
-        }
+        // 保存检测结果（图片检测直接保存）
+        m_dbManager->saveDetection(det.className, det.confidence);
     }
 
     // 显示结果
@@ -489,41 +484,27 @@ void MainWindow::stopVideoDetection()
 {
     m_videoProcessor->stop();
     updateDetectionResult("视频检测已停止");
-
-    // 清空检测记录
-    m_lastDetection.clear();
-    m_consecutiveCount.clear();
-    m_lastSaveTime.clear();
 }
 
 void MainWindow::startCamera()
 {
-    if (m_capture.isOpened()) {
+    if (m_videoProcessor->isRunning()) {
         stopCamera();
     }
 
-    m_capture.open(0);
-    if (!m_capture.isOpened()) {
+    if (!m_videoProcessor->openCamera(0)) {
         QMessageBox::warning(this, "错误", "无法打开摄像头");
         return;
     }
 
-    m_frameTimer->start();
+    m_videoProcessor->start();
     updateDetectionResult("摄像头已开启");
 }
 
 void MainWindow::stopCamera()
 {
-    m_frameTimer->stop();
-    if (m_capture.isOpened()) {
-        m_capture.release();
-    }
+    m_videoProcessor->stop();
     updateDetectionResult("摄像头已关闭");
-
-    // 清空检测记录
-    m_lastDetection.clear();
-    m_consecutiveCount.clear();
-    m_lastSaveTime.clear();
 }
 
 void MainWindow::startIPCamera()
@@ -542,19 +523,18 @@ void MainWindow::startIPCamera()
         return;
     }
 
-    if (m_capture.isOpened()) {
+    if (m_videoProcessor->isRunning()) {
         stopIPCamera();
     }
 
     m_ipCameraAddress = address;
-    m_capture.open(address.toStdString());
 
-    if (!m_capture.isOpened()) {
+    if (!m_videoProcessor->openIPCamera(address.toStdString())) {
         QMessageBox::warning(this, "错误", "无法连接到IP摄像头，请检查地址是否正确");
         return;
     }
 
-    m_frameTimer->start();
+    m_videoProcessor->start();
     updateDetectionResult("已连接到IP摄像头");
     m_ipcameraStartBtn->setEnabled(false);
     m_ipcameraStopBtn->setEnabled(true);
@@ -562,19 +542,10 @@ void MainWindow::startIPCamera()
 
 void MainWindow::stopIPCamera()
 {
-    m_frameTimer->stop();
-    if (m_capture.isOpened()) {
-        m_capture.release();
-    }
-
+    m_videoProcessor->stop();
     updateDetectionResult("IP摄像头已断开");
     m_ipcameraStartBtn->setEnabled(true);
     m_ipcameraStopBtn->setEnabled(false);
-
-    // 清空检测记录
-    m_lastDetection.clear();
-    m_consecutiveCount.clear();
-    m_lastSaveTime.clear();
 }
 
 void MainWindow::reconnectIPCamera()
@@ -582,9 +553,8 @@ void MainWindow::reconnectIPCamera()
     if (!m_ipCameraAddress.isEmpty()) {
         stopIPCamera();
         QTimer::singleShot(1000, [this]() {
-            m_capture.open(m_ipCameraAddress.toStdString());
-            if (m_capture.isOpened()) {
-                m_frameTimer->start();
+            if (m_videoProcessor->openIPCamera(m_ipCameraAddress.toStdString())) {
+                m_videoProcessor->start();
                 updateDetectionResult("已重新连接到IP摄像头");
             }
         });
@@ -624,201 +594,37 @@ void MainWindow::showRecords()
     dialog.exec();
 }
 
-// void MainWindow::processFrame()
-// {
-//     qDebug() << "proccessFrame";
-
-//     if (!m_capture.isOpened()) {
-//         return;
-//     }
-
-//     cv::Mat frame;
-//     if (!m_capture.read(frame)) {
-//         updateDetectionResult("视频流读取失败，正在尝试重新连接...");
-//         reconnectIPCamera();
-//         return;
-//     }
-
-//     // 调整帧大小
-//     // cv::resize(frame, frame, cv::Size(DISPLAY_WIDTH, DISPLAY_HEIGHT));
-
-//     // 执行检测
-//     auto results = m_detectionEngine->detect(frame);
-
-//     // 绘制检测结果
-//     for (const auto& det : results) {
-//         cv::rectangle(frame, det.bbox, cv::Scalar(0, 255, 0), 2);
-
-//         std::string label = det.className + " " +
-//                             std::to_string(int(det.confidence * 100)) + "%";
-//         cv::putText(frame, label,
-//                     cv::Point(det.bbox.x, det.bbox.y - 5),
-//                     cv::FONT_HERSHEY_SIMPLEX, 0.5,
-//                     cv::Scalar(0, 255, 0), 2);
-
-//         // 保存检测结果
-//         if (shouldSaveDetection(QString::fromStdString(det.className), det.confidence)) {
-//             m_dbManager->saveDetection(det.className, det.confidence);
-//         }
-//     }
-
-//     onFrameReady(frame);
-//     qDebug() << "proccessFrame";
-// }
-
-void MainWindow::processFrame()
-{
-    if (!m_capture.isOpened()) {
-        return;
-    }
-    cv::Mat frame;
-    if (!m_capture.read(frame)) {
-        updateDetectionResult("视频流读取失败，正在尝试重新连接...");
-        reconnectIPCamera();
-        return;
-    }
-    qDebug() << "Original Frame Size:" << frame.cols << "x" << frame.rows;
-
-    // **【修改 1: 检查空帧，防止崩溃】**
-    if (frame.empty()) {
-        return;
-    }
-
-    // **【修改 2: 恢复并启用调整帧大小】**
-    // 目标尺寸：DISPLAY_WIDTH, DISPLAY_HEIGHT (与 QLabel 尺寸一致)
-    // 您的 UI 中 m_imageLabel 设置了 setFixedSize(DISPLAY_WIDTH, DISPLAY_HEIGHT)。
-    // 务必确保 DISPLAY_WIDTH 和 DISPLAY_HEIGHT 已在某处定义为合理的正整数，例如 640 和 480。
-    cv::Mat displayFrame;
-    cv::resize(frame, displayFrame, cv::Size(DISPLAY_WIDTH, DISPLAY_HEIGHT));
-    qDebug() << "Display Frame Size:" << displayFrame.cols << "x" << displayFrame.rows;
-
-    // 执行检测 (在调整后的 displayFrame 上进行检测)
-    auto results = m_detectionEngine->detect(displayFrame); // <--- 在调整后的帧上检测
-    // 绘制检测结果 (检测结果坐标现在与 displayFrame 的尺寸匹配)
-    for (const auto& det : results) {
-        qDebug() << "Detection Box (x,y,w,h):" << det.bbox.x << det.bbox.y
-                 << det.bbox.width << det.bbox.height;
-        cv::rectangle(displayFrame, det.bbox, cv::Scalar(0, 255, 0), 2);
-        std::string label = det.className + " " +
-        std::to_string(int(det.confidence * 100)) + "%";
-        cv::putText(displayFrame, label,
-        cv::Point(det.bbox.x, det.bbox.y - 5),
-        cv::FONT_HERSHEY_SIMPLEX, 0.5,
-        cv::Scalar(0, 255, 0), 2);
-        // 保存检测结果
-        if (shouldSaveDetection(QString::fromStdString(det.className), det.confidence)) {
-            m_dbManager->saveDetection(det.className, det.confidence);
-        }
-    }
-    onFrameReady(displayFrame); // <--- 传递绘制完成的帧
-}
-
-// void MainWindow::onFrameReady(const cv::Mat& frame)
-    // {
-    //     if (frame.empty()) {
-    //         return;
-    //     }
-
-//     // 转换OpenCV图像为Qt图像
-//     QImage qImg;
-//     if (frame.channels() == 3) {
-//         cv::Mat rgb;
-//         cv::cvtColor(frame, rgb, cv::COLOR_BGR2RGB);
-//         qImg = QImage(rgb.data, rgb.cols, rgb.rows, rgb.step, QImage::Format_RGB888);
-//     } else if (frame.channels() == 1) {
-//         qImg = QImage(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_Grayscale8);
-//     }
-
-//     m_imageLabel->setPixmap(QPixmap::fromImage(qImg));
-// }
-
 void MainWindow::onFrameReady(const cv::Mat& frame)
 {
     if (frame.empty()) {
-        qDebug() << "Frame is empty, skipping display.";
         return;
     }
 
-    // 1. 检查和转换颜色空间
-    cv::Mat temp;
+    // Worker已经完成了检测和绘制，这里只需要显示
+    cv::Mat rgb;
     if (frame.channels() == 3) {
-        // OpenCV 默认使用 BGR 格式，Qt 需要 RGB
-        cv::cvtColor(frame, temp, cv::COLOR_BGR2RGB);
-    } else if (frame.channels() == 1) {
-        // 灰度图直接使用
-        temp = frame;
+        cv::cvtColor(frame, rgb, cv::COLOR_BGR2RGB);
     } else {
-        qDebug() << "Unsupported frame channels: " << frame.channels();
-        return;
+        rgb = frame;
     }
 
-    // 2. 使用 QImage 临时构造，并确保格式正确
-    QImage qImg(temp.data,
-                temp.cols,
-                temp.rows,
-                temp.step,
-                temp.channels() == 3 ? QImage::Format_RGB888 : QImage::Format_Grayscale8);
-
-    // 3. **【关键修复点】** 使用 copy() 强制 QImage 复制数据。
+    // 创建QImage并复制数据
+    QImage qImg(rgb.data, rgb.cols, rgb.rows, rgb.step,
+                rgb.channels() == 3 ? QImage::Format_RGB888 : QImage::Format_Grayscale8);
     QImage qImgCopy = qImg.copy();
 
-    // 4. 将 QImage 转换为 QPixmap 并显示
+    // 显示到QLabel
     QPixmap pixmap = QPixmap::fromImage(qImgCopy);
-
-    // 5. 缩放显示 (可选，但推荐确保画面正确填充 QLabel)
-    QPixmap scaledPixmap = pixmap.scaled(
-        m_imageLabel->size(),
-        Qt::KeepAspectRatio,
-        Qt::SmoothTransformation
-        );
-
+    QPixmap scaledPixmap = pixmap.scaled(m_imageLabel->size(),
+                                         Qt::KeepAspectRatio,
+                                         Qt::SmoothTransformation);
     m_imageLabel->setPixmap(scaledPixmap);
 
-    // 清除 QLabel 上的提示文本
-    if (m_imageLabel->text() != "") {
+    if (!m_imageLabel->text().isEmpty()) {
         m_imageLabel->setText("");
     }
 }
 
-bool MainWindow::shouldSaveDetection(const QString& name, double confidence)
-{
-    qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
-
-    // 检查置信度阈值
-    if (confidence < m_confidenceThreshold) {
-        return false;
-    }
-
-    // 检查时间间隔
-    if (m_lastSaveTime.count(name) > 0) {
-        if (currentTime - m_lastSaveTime[name] < m_saveInterval) {
-            return false;
-        }
-    }
-
-    // 检查连续检测
-    if (m_lastDetection.count(name) > 0) {
-        double lastConf = m_lastDetection[name];
-        if (std::abs(confidence - lastConf) > 0.3) {
-            m_consecutiveCount[name] = 0;
-            return false;
-        }
-
-        m_consecutiveCount[name]++;
-        if (m_consecutiveCount[name] < 2) {
-            return false;
-        }
-    } else {
-        m_consecutiveCount[name] = 1;
-        m_lastDetection[name] = confidence;
-        return false;
-    }
-
-    // 更新记录
-    m_lastDetection[name] = confidence;
-    m_lastSaveTime[name] = currentTime;
-    return true;
-}
 
 void MainWindow::updateDetectionResult(const QString& result)
 {
