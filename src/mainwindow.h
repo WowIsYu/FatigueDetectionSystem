@@ -60,6 +60,9 @@ private slots:
     void processFrame();
     void onFrameReady(const cv::Mat& frame);
 
+    // 性能监测
+    void updatePerformanceIndicator();
+
 private:
     void setupUI();
     void createLeftPanel();
@@ -123,6 +126,15 @@ private:
     std::map<QString, qint64> m_lastSaveTime;
     double m_confidenceThreshold = 0.6;
     int m_saveInterval = 1000; // milliseconds
+
+    // 性能监测
+    QLabel* m_performanceLabel;
+    QLabel* m_fpsLabel;
+    QTimer* m_animationTimer;
+    int m_rotationAngle;
+    qint64 m_lastFrameTime;
+    int m_frameCount;
+    double m_currentFPS;
 
     // 常量
     static constexpr int DISPLAY_WIDTH = 960;

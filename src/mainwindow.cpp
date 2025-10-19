@@ -21,11 +21,27 @@
 #include <QDebug>
 #include <QCloseEvent>
 
+// mainwindow.cpp
+// #include <QTimer>
+// #ifdef Q_OS_LINUX
+// #include <sys/syscall.h>
+// static int cpuNow() { int c; syscall(SYS_getcpu,&c,nullptr,nullptr); return c; }
+// #endif
+// #ifdef Q_OS_WIN
+// #include <windows.h>
+// static int cpuNow() { return static_cast<int>(GetCurrentProcessorNumber()); }
+// #endif
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_frameTimer(new QTimer(this))
     , m_confidenceThreshold(0.6)
     , m_saveInterval(1000)
+    , m_animationTimer(new QTimer(this))
+    , m_rotationAngle(0)
+    , m_lastFrameTime(0)
+    , m_frameCount(0)
+    , m_currentFPS(0.0)
 {
     setWindowTitle("守护驶途");
     setMinimumSize(1200, 800);
@@ -54,6 +70,18 @@ MainWindow::MainWindow(QWidget *parent)
     // 设置帧定时器
     m_frameTimer->setInterval(33); // 约30fps
     connect(m_frameTimer, &QTimer::timeout, this, &MainWindow::processFrame);
+
+    // 设置性能监测定时器 (每50ms更新一次动画，20fps)
+    m_animationTimer->setInterval(50);
+    connect(m_animationTimer, &QTimer::timeout, this, &MainWindow::updatePerformanceIndicator);
+    m_animationTimer->start(); // 始终运行
+
+    // 1 秒刷一次
+    // auto *timer = new QTimer(this);
+    // connect(timer, &QTimer::timeout, [](){
+    //     qDebug() << "Main thread now on CPU" << cpuNow();
+    // });
+    // timer->start(1000);
 }
 
 MainWindow::~MainWindow()
@@ -179,6 +207,34 @@ void MainWindow::createLeftPanel()
     ipcameraLayout->addWidget(m_ipcameraStartBtn);
     ipcameraLayout->addWidget(m_ipcameraStopBtn);
     layout->addWidget(ipcameraGroup);
+
+    // 性能监测组
+    auto* performanceGroup = new QGroupBox("性能监测", m_leftPanel);
+    auto* performanceLayout = new QVBoxLayout(performanceGroup);
+
+    m_performanceLabel = new QLabel("●", performanceGroup);
+    m_performanceLabel->setAlignment(Qt::AlignCenter);
+    m_performanceLabel->setStyleSheet(R"(
+        QLabel {
+            font-size: 40px;
+            color: #2ECC71;
+            margin: 10px;
+        }
+    )");
+
+    m_fpsLabel = new QLabel("UI FPS: 0.0", performanceGroup);
+    m_fpsLabel->setAlignment(Qt::AlignCenter);
+    m_fpsLabel->setStyleSheet(R"(
+        QLabel {
+            font-size: 14px;
+            color: #ECF0F1;
+            margin: 5px;
+        }
+    )");
+
+    performanceLayout->addWidget(m_performanceLabel);
+    performanceLayout->addWidget(m_fpsLabel);
+    layout->addWidget(performanceGroup);
 
     layout->addStretch();
 }
@@ -787,4 +843,56 @@ void MainWindow::closeEvent(QCloseEvent* event)
     stopVideoDetection();
     saveConfig();
     event->accept();
+}
+
+void MainWindow::updatePerformanceIndicator()
+{
+    // 更新旋转角度
+    m_rotationAngle = (m_rotationAngle + 30) % 360;
+
+    // 根据角度选择不同的旋转符号
+    QStringList rotationChars = {"◴", "◷", "◶", "◵"};
+    int index = (m_rotationAngle / 90) % 4;
+    m_performanceLabel->setText(rotationChars[index]);
+
+    // 计算 FPS
+    qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
+    if (m_lastFrameTime > 0) {
+        qint64 elapsed = currentTime - m_lastFrameTime;
+        if (elapsed > 0) {
+            m_currentFPS = 1000.0 / elapsed;
+            // 使用简单的移动平均来平滑 FPS 显示
+            static double avgFPS = 0.0;
+            avgFPS = avgFPS * 0.9 + m_currentFPS * 0.1;
+            m_fpsLabel->setText(QString("UI FPS: %1").arg(avgFPS, 0, 'f', 1));
+        }
+    }
+    m_lastFrameTime = currentTime;
+
+    // 根据 FPS 改变颜色
+    if (m_currentFPS < 15) {
+        m_performanceLabel->setStyleSheet(R"(
+            QLabel {
+                font-size: 40px;
+                color: #E74C3C;
+                margin: 10px;
+            }
+        )");
+    } else if (m_currentFPS < 25) {
+        m_performanceLabel->setStyleSheet(R"(
+            QLabel {
+                font-size: 40px;
+                color: #F39C12;
+                margin: 10px;
+            }
+        )");
+    } else {
+        m_performanceLabel->setStyleSheet(R"(
+            QLabel {
+                font-size: 40px;
+                color: #2ECC71;
+                margin: 10px;
+            }
+        )");
+    }
 }

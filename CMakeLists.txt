@@ -11,17 +11,56 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Sql Multimedia Network)
-find_package(OpenCV REQUIRED)
-# find_package(SQLite3 REQUIRED)
 
-# 在 edit-preferences-编译套件-cmake configuration 中添加opencv的路径：
-# -DOpenCV_DIR:PATH=D:/develop_software/opencv-4.12.0/opencv/build/x64/vc16/lib
+# 1. 手动设置 OpenCV 路径
+set(OPENCV_ROOT_PATH "D:/dependency/opencv-4.12.0/opencv/build")
+
+# set(OpenCV_DIR "D:/dependency/opencv-4.12.0/opencv/build/x64/vc16/lib"
+#     CACHE PATH "Path to OpenCVConfig.cmake")
+# include路径：D:\dependency\opencv-4.12.0\opencv\build\include\opencv2
+
+# 自动区分 Debug / Release
+# 分别找到 Debug / Release 的 OpenCV 库
+find_library(OpenCV_LIB_DEBUG
+    NAMES opencv_world4120d
+    PATHS ${OPENCV_ROOT_PATH}/x64/vc16/lib
+)
+
+find_library(OpenCV_LIB_RELEASE
+    NAMES opencv_world4120
+    PATHS ${OPENCV_ROOT_PATH}/x64/vc16/lib
+)
+
+# 指定多配置链接规则
+set(OpenCV_LIBS
+    debug ${OpenCV_LIB_DEBUG}
+    optimized ${OpenCV_LIB_RELEASE}
+)
+
+message(STATUS "OpenCV Debug lib: ${OpenCV_LIB_DEBUG}")
+message(STATUS "OpenCV Release lib: ${OpenCV_LIB_RELEASE}")
+
+find_path(OPENCV_INCLUDE_DIR opencv2/core.hpp
+    PATHS ${OPENCV_ROOT_PATH}/include)
+
+
+# 2. 在 edit-preferences-编译套件-cmake configuration 中添加opencv的路径：
+# -DOpenCV_DIR:PATH=D:\dependency\opencv-4.12.0\opencv\build\x64\vc16\lib
 # 也可在project中配置
+
+
+# 手动设置 ONNX Runtime 根目录
+set(ONNXRUNTIME_ROOT_PATH "D:/dependency/onnxruntime-win-x64-1.23.0")
+
+message(STATUS "ONNXRUNTIME_INCLUDE_DIR = ${ONNXRUNTIME_INCLUDE_DIR}")
+
 find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h
     PATHS ${ONNXRUNTIME_ROOT_PATH}/include)
 
 find_library(ONNXRUNTIME_LIB onnxruntime
     PATHS ${ONNXRUNTIME_ROOT_PATH}/lib)
+
+
 
 
 set(PROJECT_SOURCES
@@ -59,6 +98,26 @@ else()
     endif()
 endif()
 
+# Include directories
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${ONNXRUNTIME_INCLUDE_DIR}
+    ${OPENCV_INCLUDE_DIR}
+)
+
+
+target_link_libraries(FatigueDetectionSystem PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
+  Qt6::Core
+  Qt6::Widgets
+  Qt6::Sql
+  Qt6::Multimedia
+  Qt6::Network
+  ${OpenCV_LIBS}
+  ${ONNXRUNTIME_LIB}
+
+  # SQLite::SQLite3
+)
+
 
 message(STATUS "源码根 = ${CMAKE_SOURCE_DIR}")
 message(STATUS "构建根 = ${CMAKE_BINARY_DIR}")
@@ -74,27 +133,17 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMENT "Copying models directory to build tree ..."
 )
 
-
-
-
-# Include directories
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${ONNXRUNTIME_INCLUDE_DIR}
-    ${OpenCV_INCLUDE_DIRS}
+# 复制dll文件到可执行文件目录
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${ONNXRUNTIME_ROOT_PATH}/lib/onnxruntime.dll"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${OPENCV_ROOT_PATH}/x64/vc16/bin/opencv_world4120d.dll"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
 )
 
 
-target_link_libraries(FatigueDetectionSystem PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
-  Qt6::Core
-  Qt6::Widgets
-  Qt6::Sql
-  Qt6::Multimedia
-  Qt6::Network
-  ${OpenCV_LIBS}
-  ${ONNXRUNTIME_LIB}
-  # SQLite::SQLite3
-)
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an

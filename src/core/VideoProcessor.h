@@ -40,6 +40,7 @@ class VideoProcessor : public QObject
     Q_OBJECT
 
 public:
+    // VideoProcessor 实现
     VideoProcessor(QObject* parent = nullptr);
     ~VideoProcessor();
 

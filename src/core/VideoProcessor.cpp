@@ -1,6 +1,7 @@
 #include "VideoProcessor.h"
 #include <QDebug>
 #include <QTimer>
+#include <Windows.h>
 
 // VideoProcessorWorker 实现
 VideoProcessorWorker::VideoProcessorWorker()
@@ -104,6 +105,55 @@ VideoProcessor::VideoProcessor(QObject* parent)
             this, &VideoProcessor::frameReady);
     connect(m_worker.get(), &VideoProcessorWorker::error,
             this, &VideoProcessor::error);
+
+    // connect(m_thread.get(), &QThread::started, [this]() {
+    //     HANDLE h = reinterpret_cast<HANDLE>(m_thread->currentThreadId());
+    //     SetThreadAffinityMask(h, 1ULL << 3);   // 核 3
+    // });
+
+    // connect(m_thread.get(), &QThread::started, [this]() {
+    //     HANDLE h = GetCurrentThread();   // 当前线程句柄（worker）
+
+    //     /* 1. 打印前 */
+    //     DWORD procBefore = GetCurrentProcessorNumber();
+    //     qDebug() << "worker thread"
+    //              << Qt::hex << reinterpret_cast<quintptr>(h)
+    //              << "currently on CPU" << procBefore;
+
+    //     /* 3. 绑核 */
+    //     SetThreadAffinityMask(h, 1ULL << 3);
+
+    //     /* 4. 打印后 */
+    //     DWORD procAfter = GetCurrentProcessorNumber();
+    //     qDebug() << "worker thread now bound to CPU" << procAfter;
+    // });
+
+    connect(m_thread.get(), &QThread::started, [this]() {
+        // 1. 当前线程“伪句柄” → 真实句柄
+        HANDLE pseudo = GetCurrentThread();   // 0xFFFFFFFE
+        HANDLE real   = nullptr;
+        DuplicateHandle(
+            GetCurrentProcess(),      // 源进程
+            pseudo,                   // 源句柄（伪）
+            GetCurrentProcess(),      // 目标进程
+            &real,                    // 输出：真实句柄
+            0, FALSE, DUPLICATE_SAME_ACCESS);
+
+        // 2. 当前核
+        DWORD procBefore = GetCurrentProcessorNumber();
+        qDebug() << "worker real handle" << real
+                 << "currently on CPU" << procBefore;
+
+        // 3. 绑核
+        SetThreadAffinityMask(real, 1ULL << 3);
+
+        // 4. 立即再看
+        DWORD procAfter = GetCurrentProcessorNumber();
+        qDebug() << "worker now bound to CPU" << procAfter;
+
+        // 5. 用完关闭
+        CloseHandle(real);
+    });
 
     m_thread->start();
 }
